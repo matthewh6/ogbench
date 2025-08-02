@@ -28,7 +28,53 @@ flags.DEFINE_float('min_norm', 0.4, 'Minimum action norm for MarkovOracle.')
 flags.DEFINE_float('p_random_action', 0, 'Probability of selecting a random action.')
 flags.DEFINE_integer('num_episodes', 1000, 'Number of episodes.')
 flags.DEFINE_integer('max_episode_steps', 1001, 'Number of episodes.')
+flags.DEFINE_boolean('save_goal_info', False, 'Whether to render and save goal images in the dataset.')
 
+
+def render_current_goal(env, info):
+    """Render the goal state for the current target in data collection mode."""
+    import mujoco
+    from ogbench.manipspace import lie
+    
+    # Save current state
+    saved_qpos = env.unwrapped._data.qpos.copy()
+    saved_qvel = env.unwrapped._data.qvel.copy()
+    saved_ctrl = env.unwrapped._data.ctrl.copy()
+    saved_time = env.unwrapped._data.time
+    target_block = info['privileged/target_block']
+    saved_target_block_qpos = env.unwrapped._data.joint(f'object_joint_{target_block}').qpos.copy()
+
+    # Get target information
+    target_pos = info['privileged/target_block_pos']
+    target_yaw = info['privileged/target_block_yaw'][0]
+    target_quat = lie.SO3.from_z_radians(target_yaw).wxyz.tolist()
+    
+    # Sample arm initial state
+    env.unwrapped.initialize_arm()
+
+    # Set the target block to its goal position
+    env.unwrapped._data.joint(f'object_joint_{target_block}').qpos[:3] = target_pos
+    env.unwrapped._data.joint(f'object_joint_{target_block}').qpos[3:] = target_quat
+    env.unwrapped._data.qvel[:] = 0.0
+    mujoco.mj_forward(env.unwrapped._model, env.unwrapped._data)
+
+    # Do a few random steps to make the scene stable.
+    # for _ in range(2):
+    #     env.step(env.action_space.sample())
+    
+    # Save goal info
+    goal_img = env.render()
+    goal_state = env.unwrapped.compute_oracle_observation()
+
+    # Restore original state
+    env.unwrapped._data.qpos[:] = saved_qpos
+    env.unwrapped._data.qvel[:] = saved_qvel
+    env.unwrapped._data.ctrl[:] = saved_ctrl
+    env.unwrapped._data.time = saved_time
+    env.unwrapped._data.joint(f'object_joint_{target_block}').qpos[:] = saved_target_block_qpos
+    mujoco.mj_forward(env.unwrapped._model, env.unwrapped._data)
+    
+    return goal_img, goal_state
 
 def main(_):
     assert FLAGS.dataset_type in ['play', 'noisy']
@@ -113,7 +159,7 @@ def main(_):
             if oracle_type == 'markov':
                 # Set the action noise level for this episode.
                 xi = np.random.uniform(0, FLAGS.noise)
-
+            
             agent = agents[info['privileged/target_task']]
             agent.reset(ob, info)
 
@@ -122,6 +168,11 @@ def main(_):
             ep_qpos = []
 
             while not done:
+                if FLAGS.save_goal_info:
+                    goal_img, goal_state = render_current_goal(env, info)
+                    dataset['goal_images'].append(goal_img)
+                    dataset['goal_states'].append(goal_state)
+
                 if np.random.rand() < FLAGS.p_random_action:
                     # Sample a random action.
                     action = env.action_space.sample()

@@ -6,3 +6,6 @@ dist/
 .DS_Store
 .idea/
 .ruff_cache/
+*.png
+*.npz
+data_gen_scripts/experts/

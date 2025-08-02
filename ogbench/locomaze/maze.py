@@ -483,6 +483,10 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             if self._ob_type == 'states':
                 self.model.geom('target').pos[:2] = goal_xy
 
+            # Also update the sim data geom position (to immediately reflect in simulation):
+            target_geom_id = self.model.geom('target').id
+            self.data.geom_xpos[target_geom_id][:2] = self.cur_goal_xy
+
         def get_oracle_subgoal(self, start_xy, goal_xy):
             """Get the oracle subgoal for the agent.
 

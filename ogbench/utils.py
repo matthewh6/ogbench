@@ -30,14 +30,15 @@ def load_dataset(dataset_path, ob_dtype=np.float32, action_dtype=np.float32, com
     file = np.load(dataset_path)
 
     dataset = dict()
-    for k in ['observations', 'actions', 'terminals']:
-        if k == 'observations':
+    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states']:
+        if k == 'observations' or k == 'goals':
             dtype = ob_dtype
         elif k == 'actions':
             dtype = action_dtype
         else:
             dtype = np.float32
-        dataset[k] = file[k][...].astype(dtype, copy=False)
+        if k in file:
+            dataset[k] = file[k][...].astype(dtype, copy=False)
 
     if add_info:
         # Read observation information.
@@ -170,7 +171,8 @@ def make_env_and_datasets(
         dataset_add_info = True
     elif 'oraclerep' in splits:
         # Environment with oracle goal representations.
-        env_name = '-'.join(splits[:-3] + splits[-1:])  # Remove the dataset type and the word 'oraclerep'.
+        pos = splits.index('oraclerep')
+        env_name = '-'.join(splits[: pos] + splits[pos + 1:])  # Remove the dataset type.
         if not dataset_only:
             env = gymnasium.make(env_name, use_oracle_rep=True, **env_kwargs)
         dataset_name = '-'.join(splits[:-2] + splits[-1:])  # Remove the word 'oraclerep'.
@@ -178,6 +180,10 @@ def make_env_and_datasets(
     else:
         # Original, goal-conditioned environment.
         env_name = '-'.join(splits[:-2] + splits[-1:])  # Remove the dataset type.
+
+        if 'pointmaze' in splits and 'visual' in splits: # TODO: quick hack for manually generated visual env
+            env_name = '-'.join(splits[1:-2] + splits[-1:])
+
         if not dataset_only:
             env = gymnasium.make(env_name, **env_kwargs)
 
@@ -194,8 +200,11 @@ def make_env_and_datasets(
         train_dataset_path = dataset_path
         val_dataset_path = dataset_path.replace('.npz', '-val.npz')
 
-    ob_dtype = np.uint8 if ('visual' in env_name or 'powderworld' in env_name) else np.float32
-    action_dtype = np.int32 if 'powderworld' in env_name else np.float32
+    # ob_dtype = np.uint8 if ('visual' in env_name or 'powderworld' in env_name) else np.float32
+    # action_dtype = np.int32 if 'powderworld' in env_name else np.float32
+    ob_dtype = np.uint8 if ('visual' in dataset_path or 'powderworld' in dataset_path) else np.float32
+    action_dtype = np.int32 if 'powderworld' in dataset_path else np.float32
+    
     train_dataset = load_dataset(
         train_dataset_path,
         ob_dtype=ob_dtype,
@@ -203,6 +212,7 @@ def make_env_and_datasets(
         compact_dataset=compact_dataset,
         add_info=dataset_add_info,
     )
+
     val_dataset = load_dataset(
         val_dataset_path,
         ob_dtype=ob_dtype,

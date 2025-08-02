@@ -639,6 +639,7 @@ class SceneEnv(ManipSpaceEnv):
             window_scaler = 15.0
 
             ob_info = self.compute_ob_info()
+
             ob = [
                 ob_info['proprio/joint_pos'],
                 ob_info['proprio/joint_vel'],
