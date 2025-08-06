@@ -9,3 +9,4 @@ dist/
 *.png
 *.npz
 data_gen_scripts/experts/
+*.ipynb

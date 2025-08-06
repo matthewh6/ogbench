@@ -31,7 +31,7 @@ flags.DEFINE_integer('max_episode_steps', 1001, 'Number of episodes.')
 flags.DEFINE_boolean('save_goal_info', False, 'Whether to render and save goal images in the dataset.')
 
 
-def render_current_goal(env, info):
+def get_goal_info(env, info):
     """Render the goal state for the current target in data collection mode."""
     import mujoco
     from ogbench.manipspace import lie
@@ -57,10 +57,6 @@ def render_current_goal(env, info):
     env.unwrapped._data.joint(f'object_joint_{target_block}').qpos[3:] = target_quat
     env.unwrapped._data.qvel[:] = 0.0
     mujoco.mj_forward(env.unwrapped._model, env.unwrapped._data)
-
-    # Do a few random steps to make the scene stable.
-    # for _ in range(2):
-    #     env.step(env.action_space.sample())
     
     # Save goal info
     goal_img = env.render()
@@ -169,7 +165,7 @@ def main(_):
 
             while not done:
                 if FLAGS.save_goal_info:
-                    goal_img, goal_state = render_current_goal(env, info)
+                    goal_img, goal_state = get_goal_info(env, info)
                     dataset['goal_images'].append(goal_img)
                     dataset['goal_states'].append(goal_state)
 

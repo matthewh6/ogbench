@@ -589,7 +589,6 @@ class CubeEnv(ManipSpaceEnv):
             self.set_new_target(return_info=False)
         else:
             # Set object positions and orientations based on the current task.
-
             if self._permute_blocks:
                 # Randomize the order of the cubes when there are multiple cubes.
                 permutation = self.np_random.permutation(self._num_cubes)
@@ -773,7 +772,7 @@ class CubeEnv(ManipSpaceEnv):
 
             ob_info = self.compute_ob_info()
             ob = [
-                ob_info['proprio/joint_pos'],
+                ob_info['proprio/joint_pos'], # 6 + 6 + 3 + 1 + 1 + 1 + 1 + 27
                 ob_info['proprio/joint_vel'],
                 (ob_info['proprio/effector_pos'] - xyz_center) * xyz_scaler,
                 np.cos(ob_info['proprio/effector_yaw']),

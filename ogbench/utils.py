@@ -30,15 +30,18 @@ def load_dataset(dataset_path, ob_dtype=np.float32, action_dtype=np.float32, com
     file = np.load(dataset_path)
 
     dataset = dict()
-    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states']:
-        if k == 'observations' or k == 'goals':
+    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states', 'goal_images']:
+        if k == 'observations' or k == 'goals' or k == 'goal_images':
             dtype = ob_dtype
         elif k == 'actions':
             dtype = action_dtype
         else:
             dtype = np.float32
         if k in file:
-            dataset[k] = file[k][...].astype(dtype, copy=False)
+            arr = file[k]
+            if arr.dtype != dtype:
+                arr = arr.astype(dtype)
+            dataset[k] = arr
 
     if add_info:
         # Read observation information.
@@ -186,7 +189,7 @@ def make_env_and_datasets(
 
         if not dataset_only:
             env = gymnasium.make(env_name, **env_kwargs)
-
+    
     if env_only:
         return env
 
