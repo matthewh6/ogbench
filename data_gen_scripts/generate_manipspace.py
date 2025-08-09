@@ -29,6 +29,7 @@ flags.DEFINE_float('p_random_action', 0, 'Probability of selecting a random acti
 flags.DEFINE_integer('num_episodes', 1000, 'Number of episodes.')
 flags.DEFINE_integer('max_episode_steps', 1001, 'Number of episodes.')
 flags.DEFINE_boolean('save_goal_info', False, 'Whether to render and save goal images in the dataset.')
+flags.DEFINE_boolean('save_ob_info', False, 'Whether to save the observation info in the dataset.')
 
 
 def get_goal_info(env, info):
@@ -134,6 +135,9 @@ def main(_):
     num_train_episodes = FLAGS.num_episodes
     num_val_episodes = FLAGS.num_episodes // 10
     for ep_idx in trange(num_train_episodes + num_val_episodes):
+        import psutil, os
+        print(f"Memory usage: {psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2:.2f} MB")
+
         # Have an additional while loop to handle rare cases with undesirable states (for the Scene environment).
         while True:
             ob, info = env.reset()
@@ -164,10 +168,19 @@ def main(_):
             ep_qpos = []
 
             while not done:
+                # import ipdb; ipdb.set_trace()
                 if FLAGS.save_goal_info:
-                    goal_img, goal_state = get_goal_info(env, info)
-                    dataset['goal_images'].append(goal_img)
+                    # goal_img, goal_state = get_goal_info(env, info)
+                    # dataset['goal_images'].append(goal_img)
+                    # dataset['goal_states'].append(goal_state)
+
+                    goal_state = env.unwrapped.compute_oracle_observation()
                     dataset['goal_states'].append(goal_state)
+                if FLAGS.save_ob_info:
+                    ob_info = env.unwrapped.compute_ob_info()
+                    for key, value in ob_info.items():
+                        if 'proprio' in key:
+                            dataset[f'ob_info/{key}'].append(value)
 
                 if np.random.rand() < FLAGS.p_random_action:
                     # Sample a random action.
