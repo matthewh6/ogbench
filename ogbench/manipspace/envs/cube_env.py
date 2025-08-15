@@ -812,3 +812,138 @@ class CubeEnv(ManipSpaceEnv):
         successes = self._compute_successes()
         reward = float(sum(successes) - len(successes))
         return reward
+
+
+    def reset_to_state_and_goal(self, state_vector, goal_positions=None, task_info=None):
+        """Reset the environment to a given 28-dimensional state and optionally set goals.
+        
+        Args:
+            state_vector: 28-dimensional numpy array representing the state
+            goal_positions: Array of goal positions for each cube (shape: [num_cubes, 3])
+                        If None, will try to extract from task_info or keep current goals
+            task_info: Dictionary with goal_xyzs if available
+            
+        Returns:
+            Updated observation after reset
+            
+        The state vector structure (based on compute_observation):
+        - joint_pos (6): arm joint positions
+        - joint_vel (6): arm joint velocities
+        - effector_pos (3): end-effector position (scaled and centered)
+        - effector_yaw_cos (1): cosine of effector yaw
+        - effector_yaw_sin (1): sine of effector yaw
+        - gripper_opening (1): gripper opening (scaled)
+        - gripper_contact (1): gripper contact force
+        - For each cube (6 elements per cube):
+            - block_pos (3): cube position (scaled and centered)
+            - block_quat (4): cube quaternion
+            - block_yaw_cos (1): cosine of cube yaw
+            - block_yaw_sin (1): sine of cube yaw
+        """
+        
+        # Constants from the observation computation
+        xyz_center = np.array([0.425, 0.0, 0.0])
+        xyz_scaler = 10.0
+        gripper_scaler = 3.0
+        
+        # Parse the state vector
+        idx = 0
+        
+        # Extract arm joint positions and velocities
+        joint_pos = state_vector[idx:idx+6]
+        idx += 6
+        joint_vel = state_vector[idx:idx+6] 
+        idx += 6
+        
+        # Extract effector information
+        effector_pos_scaled = state_vector[idx:idx+3]
+        idx += 3
+        effector_yaw_cos = state_vector[idx]
+        idx += 1
+        effector_yaw_sin = state_vector[idx]
+        idx += 1
+        gripper_opening_scaled = state_vector[idx]
+        idx += 1
+        gripper_contact = state_vector[idx]
+        idx += 1
+        
+        # Convert scaled values back to world coordinates
+        effector_pos = effector_pos_scaled / xyz_scaler + xyz_center
+        effector_yaw = np.arctan2(effector_yaw_sin, effector_yaw_cos)
+        gripper_opening = gripper_opening_scaled / gripper_scaler
+        
+        # Extract cube states
+        cube_positions = []
+        cube_quaternions = []
+        cube_yaws = []
+        
+        for i in range(self._num_cubes):
+            # Cube position (scaled and centered)
+            cube_pos_scaled = state_vector[idx:idx+3]
+            idx += 3
+            cube_pos = cube_pos_scaled / xyz_scaler + xyz_center
+            cube_positions.append(cube_pos)
+            
+            # Cube quaternion
+            cube_quat = state_vector[idx:idx+4]
+            idx += 4
+            cube_quaternions.append(cube_quat)
+            
+            # Cube yaw (redundant with quaternion, but included for completeness)
+            cube_yaw_cos = state_vector[idx]
+            idx += 1
+            cube_yaw_sin = state_vector[idx] 
+            idx += 1
+            cube_yaw = np.arctan2(cube_yaw_sin, cube_yaw_cos)
+            cube_yaws.append(cube_yaw)
+        
+        # Set the arm joint positions and velocities
+        self._data.qpos[self._arm_joint_ids] = joint_pos
+        self._data.qvel[self._arm_joint_ids] = joint_vel
+        
+        # Set gripper state
+        self._data.qpos[self._gripper_opening_joint_id] = gripper_opening * 0.8  # Convert back from normalized
+        
+        # Set cube positions and orientations
+        for i in range(self._num_cubes):
+            # Set cube position
+            self._data.joint(f'object_joint_{i}').qpos[:3] = cube_positions[i]
+            
+            # Set cube orientation using quaternion
+            self._data.joint(f'object_joint_{i}').qpos[3:] = cube_quaternions[i]
+            
+            # Zero out cube velocities for stability
+            self._data.joint(f'object_joint_{i}').qvel[:] = 0.0
+        
+        # Handle goal setting based on available information
+        if goal_positions is not None:
+            # Use provided goal positions
+            goal_positions = np.array(goal_positions)
+            goal_positions = goal_positions.reshape(-1, 3) # (num_cubes, 3)
+
+            goal_xyzs = (goal_positions / xyz_scaler) + xyz_center
+            
+            for i in range(min(self._num_cubes, len(goal_xyzs))):
+                self._data.mocap_pos[self._cube_target_mocap_ids[i]] = goal_xyzs[i]
+                self._data.mocap_quat[self._cube_target_mocap_ids[i]] = lie.SO3.identity().wxyz.tolist()
+                
+        elif task_info is not None and 'goal_xyzs' in task_info:
+            # Use goal from task_info
+            goal_xyzs = task_info['goal_xyzs']
+            for i in range(min(self._num_cubes, len(goal_xyzs))):
+                self._data.mocap_pos[self._cube_target_mocap_ids[i]] = goal_xyzs[i]
+                self._data.mocap_quat[self._cube_target_mocap_ids[i]] = lie.SO3.identity().wxyz.tolist()
+        
+        # Update physics
+        mujoco.mj_forward(self._model, self._data)
+        
+        # Run a few simulation steps to stabilize
+        for _ in range(5):
+            mujoco.mj_step(self._model, self._data)
+        
+        # Update internal state
+        self.pre_step()
+        mujoco.mj_forward(self._model, self._data)
+        self.post_step()
+        
+        return self.compute_observation()

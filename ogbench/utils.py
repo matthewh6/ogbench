@@ -30,7 +30,7 @@ def load_dataset(dataset_path, ob_dtype=np.float32, action_dtype=np.float32, com
     file = np.load(dataset_path)
 
     dataset = dict()
-    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states', 'goal_images']:
+    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states', 'goal_images', 'states', 'state_vectors']:
         if k == 'observations' or k == 'goals' or k == 'goal_images':
             dtype = ob_dtype
         elif k == 'actions':

@@ -207,6 +207,7 @@ def main(_):
         val_dataset[k] = np.array(v[total_train_steps:], dtype=dtype)
 
     for path, dataset in [(train_path, train_dataset), (val_path, val_dataset)]:
+        print(f'Saving dataset to {path}...')
         np.savez_compressed(path, **dataset)
 
 

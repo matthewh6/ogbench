@@ -177,10 +177,19 @@ def main(_):
                     goal_state = env.unwrapped.compute_oracle_observation()
                     dataset['goal_states'].append(goal_state)
                 if FLAGS.save_ob_info:
+                    env.unwrapped._ob_type = 'states'
+                    state_vector = env.unwrapped.compute_observation()
                     ob_info = env.unwrapped.compute_ob_info()
-                    for key, value in ob_info.items():
-                        if 'proprio' in key:
-                            dataset[f'ob_info/{key}'].append(value)
+                    states = np.concatenate([ob_info['proprio/effector_pos'], ob_info['proprio/effector_yaw'], ob_info['proprio/gripper_opening']]) # absolute versions of action space
+                    dataset['states'].append(states)
+                    dataset['state_vectors'].append(state_vector)
+                    
+                    env.unwrapped._ob_type = 'pixels'
+                    # import ipdb; ipdb.set_trace()  # DEBUG
+                    # ob_info = env.unwrapped.compute_ob_info()
+                    # for key, value in ob_info.items():
+                    #     if 'proprio' in key:
+                    #         dataset[f'ob_info/{key}'].append(value)
 
                 if np.random.rand() < FLAGS.p_random_action:
                     # Sample a random action.
