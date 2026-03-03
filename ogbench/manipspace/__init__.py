@@ -18,7 +18,7 @@ puzzle_singletask_dict = dict()
 register(
     id='cube-single-v0',
     entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
-    max_episode_steps=200,
+    max_episode_steps=500,
     kwargs=dict(
         env_type='single',
     ),
@@ -26,7 +26,7 @@ register(
 register(
     id='visual-cube-single-v0',
     entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
-    max_episode_steps=200,
+    max_episode_steps=500,
     kwargs=dict(
         env_type='single',
         **visual_dict,
@@ -187,7 +187,7 @@ for task_id in [None, 1, 2, 3, 4, 5]:
     register(
         id=f'cube-single-singletask{task_suffix}-v0',
         entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
-        max_episode_steps=200,
+        max_episode_steps=500,
         kwargs=dict(
             env_type='single',
             reward_task_id=reward_task_id,
@@ -197,7 +197,7 @@ for task_id in [None, 1, 2, 3, 4, 5]:
     register(
         id=f'visual-cube-single-singletask{task_suffix}-v0',
         entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
-        max_episode_steps=200,
+        max_episode_steps=500,
         kwargs=dict(
             env_type='single',
             **visual_dict,

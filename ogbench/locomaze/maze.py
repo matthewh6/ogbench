@@ -68,7 +68,8 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             self._maze_height = maze_height
             self._terminate_at_goal = terminate_at_goal
             self._ob_type = ob_type
-            self._add_noise_to_goal = add_noise_to_goal
+            # self._add_noise_to_goal = add_noise_to_goal
+            self._add_noise_to_goal = False
             self._reward_task_id = reward_task_id
             self._use_oracle_rep = use_oracle_rep
             assert ob_type in ['states', 'pixels']
@@ -77,7 +78,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             self._offset_x = 4
             self._offset_y = 4
             self._noise = 1
-            self._goal_tol = 1.0 if loco_env_type == 'point' else 0.5
+            self._goal_tol = 1.5 if loco_env_type == 'point' else 0.5
 
             # Define maze map.
             self._teleport_info = None
@@ -208,6 +209,24 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                         tex_rgb[x, y, :] = [r, g, 128]
                 self.initialize_renderer()
             else:
+                tex_grid = self.model.tex('grid')
+                tex_height = tex_grid.height[0]
+                tex_width = tex_grid.width[0]
+
+                # MuJoCo 3.2.1 changed the attribute name from 'tex_rgb' to 'tex_data'.
+                attr_name = 'tex_rgb' if hasattr(self.model, 'tex_rgb') else 'tex_data'
+                tex_rgb = getattr(self.model, attr_name)[tex_grid.adr[0] : tex_grid.adr[0] + 3 * tex_height * tex_width]
+                tex_rgb = tex_rgb.reshape(tex_height, tex_width, 3)
+
+                # Replace the nested loops in initialize_renderer with a solid neutral color
+                for x in range(tex_height):
+                    for y in range(tex_width):
+                        # A soft charcoal gray: [30, 30, 30]
+                        # Or a clean off-white: [240, 240, 240] (if using dark trajectories)
+                        tex_rgb[x, y, :] = [40, 40, 40]
+
+                self.initialize_renderer()
+
                 ex_ob = self.get_ob()
                 self.observation_space = Box(low=-np.inf, high=np.inf, shape=ex_ob.shape, dtype=ex_ob.dtype)
 
@@ -286,14 +305,32 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                     tree.find('.//geom[@name="left_leg_geom"]').set('material', 'self_white')
                     tree.find('.//geom[@name="left_ankle_geom"]').set('material', 'self_white')
             else:
+                # Change from .6 .6 .6 (Dark) to .9 .9 .9 (Light/Clean)
+                wall = tree.find('.//material[@name="wall"]')
+                if wall is not None:
+                    print("Changing wall color to light")
+                    # wall.set('rgba', '0.8 0.8 0.8 1') # Light Gray walls
+                    wall.set('rgba', '1.0 1.0 1.0 1.0') # White walls
                 # Only show the target for states-based observation.
+                # ET.SubElement(
+                #     worldbody,
+                #     'geom',
+                #     name='target',
+                #     type='cylinder',
+                #     # size='.5 .05',
+                #     size='1.0 .05',
+                #     pos='0 0 .05',
+                #     material='target',
+                #     contype='0',
+                #     conaffinity='0',
+                # )
                 ET.SubElement(
                     worldbody,
                     'geom',
                     name='target',
                     type='cylinder',
-                    size='.5 .05',
-                    pos='0 0 .05',
+                    size='1.0 1.0',    # Radius; adjust so it's visible but not blocking corridors
+                    pos='0 0 .75',
                     material='target',
                     contype='0',
                     conaffinity='0',
@@ -315,7 +352,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 ]
             elif self._maze_type == 'large':
                 tasks = [
-                    [(1, 1), (7, 10)],
+                    [(5, 7), (3, 5)],
                     [(5, 4), (7, 1)],
                     [(7, 4), (1, 10)],
                     [(3, 8), (5, 4)],
@@ -323,10 +360,21 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 ]
             elif self._maze_type == 'giant':
                 tasks = [
-                    [(1, 1), (10, 14)],
-                    [(1, 14), (10, 1)],
-                    [(8, 14), (1, 1)],
-                    [(8, 3), (5, 12)],
+                    # figure tasks
+                    # [(5, 11), (9.5, 14)], # image1
+                    # [(7, 12), (9.5, 14)], # image2
+                    # [(8, 14), (9.5, 14)], # image3
+
+
+                    # [(5, 12), (6, 10)],
+                    # [(1, 1), (10, 14)],
+                    # [(1, 14), (10, 1)],
+                    # [(8, 14), (1, 1)],
+                    # [(8, 3), (5, 12)],
+
+                    [(1, 1), (3, 5)],
+                    [(3, 8), (5, 12)],
+                    [(3, 8), (1, 1)],
                     [(5, 9), (3, 8)],
                 ]
             elif self._maze_type == 'teleport':
@@ -363,6 +411,18 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 height=self.height,
             )
             self.render()
+            
+            # Precompute min/max world coordinates for pixels
+            self._pixel_x_min = -self._offset_x
+            self._pixel_y_min = -self._offset_y
+            self._pixel_x_max = self._maze_unit * self.maze_map.shape[1] - self._offset_x
+            self._pixel_y_max = self._maze_unit * self.maze_map.shape[0] - self._offset_y
+            
+            # Compute actual visible maze bounds in pixel space (accounting for letterboxing)
+            # The camera is top-down (elevation=-90), so we need to compute the visible region
+            # based on the camera's field of view and the maze's world bounds
+            self._compute_visible_maze_bounds()
+            
 
         def reset(self, options=None, *args, **kwargs):
             if options is None:
@@ -393,18 +453,19 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 render_goal = options['render_goal']
 
             # Get initial and goal positions with noise.
-            init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['init_ij']))
+            # init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['init_ij']))
+            init_xy = self.ij_to_xy(self.cur_task_info['init_ij'])
             goal_xy = self.ij_to_xy(self.cur_task_info['goal_ij'])
-            if self._add_noise_to_goal:
-                goal_xy = self.add_noise(goal_xy)
+            # if self._add_noise_to_goal:
+            #     goal_xy = self.add_noise(goal_xy)
 
             # First, force set the position to the goal position to obtain the goal observation.
             super().reset(*args, **kwargs)
 
             # Do a few random steps to stabilize the environment.
-            num_random_actions = 40 if loco_env_type == 'humanoid' else 5
-            for _ in range(num_random_actions):
-                super().step(self.action_space.sample())
+            # num_random_actions = 40 if loco_env_type == 'humanoid' else 5
+            # for _ in range(num_random_actions):
+            #     super().step(self.action_space.sample())
 
             # Save the goal observation.
             self.set_goal(goal_xy=goal_xy)
@@ -449,8 +510,8 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 reward = 0.0
 
             # If the environment is in the single-task mode, modify the reward.
-            if self._reward_task_id is not None:
-                reward = reward - 1.0  # -1 (failure) or 0 (success).
+            # if self._reward_task_id is not None:
+            reward = reward - 1.0  # -1 (failure) or 0 (success).
 
             return ob, reward, terminated, truncated, info
 
@@ -476,13 +537,14 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             """Set the goal position and update the target object."""
             if goal_xy is None:
                 self.cur_goal_xy = self.ij_to_xy(goal_ij)
-                if self._add_noise_to_goal:
-                    self.cur_goal_xy = self.add_noise(self.cur_goal_xy)
+                # if self._add_noise_to_goal:
+                #     self.cur_goal_xy = self.add_noise(self.cur_goal_xy)
             else:
                 self.cur_goal_xy = goal_xy
-            if self._ob_type == 'states':
-                self.model.geom('target').pos[:2] = goal_xy
 
+            # TODO: I added this, forget why
+            # if self._ob_type == 'states':
+            self.model.geom('target').pos[:2] = self.cur_goal_xy
             # Also update the sim data geom position (to immediately reflect in simulation):
             target_geom_id = self.model.geom('target').id
             self.data.geom_xpos[target_geom_id][:2] = self.cur_goal_xy
@@ -552,6 +614,94 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             random_x = np.random.uniform(low=-self._noise, high=self._noise) * self._maze_unit / 4
             random_y = np.random.uniform(low=-self._noise, high=self._noise) * self._maze_unit / 4
             return xy[0] + random_x, xy[1] + random_y
+        
+        def _compute_visible_maze_bounds(self):
+            """Compute the actual visible maze bounds in pixel space, accounting for letterboxing.
+            
+            This method detects where the maze actually appears in the rendered image by:
+            1. Rendering the scene
+            2. Finding the bounding box of non-black pixels (the actual maze region)
+            3. Storing the pixel offsets and dimensions of the visible region
+            
+            This is necessary because MuJoCo may add black bars (letterboxing) if the camera
+            viewport aspect ratio doesn't match the image aspect ratio.
+            """
+            if self.custom_renderer is None:
+                return
+            
+            # Render to get the actual image
+            img = self.render()
+            
+            # Find the bounding box of non-black pixels (maze region)
+            # Convert to grayscale for easier thresholding
+            if img.ndim == 3:
+                gray = np.mean(img, axis=2)
+            else:
+                gray = img
+            
+            # Threshold: pixels that are not black (value > some threshold)
+            non_black = (gray > 30) & (gray < 50)  # Threshold for "not black"
+            
+            if np.any(non_black):
+                # Find bounding box
+                rows = np.any(non_black, axis=1)
+                cols = np.any(non_black, axis=0)
+                
+                y_min, y_max = np.where(rows)[0][[0, -1]] if np.any(rows) else (0, img.shape[0])
+                x_min, x_max = np.where(cols)[0][[0, -1]] if np.any(cols) else (0, img.shape[1])
+                
+                self._visible_x_min = x_min
+                self._visible_x_max = x_max
+                self._visible_y_min = y_min
+                self._visible_y_max = y_max
+                self._visible_width = x_max - x_min + 1
+                self._visible_height = y_max - y_min + 1
+
+                # print(f"Visible maze bounds: x_min={self._visible_x_min}, x_max={self._visible_x_max}, y_min={self._visible_y_min}, y_max={self._visible_y_max}")
+            else:
+                # Fallback: assume entire image is visible
+                self._visible_x_min = 0
+                self._visible_x_max = img.shape[1] - 1
+                self._visible_y_min = 0
+                self._visible_y_max = img.shape[0] - 1
+                self._visible_width = img.shape[1]
+                self._visible_height = img.shape[0]
+        
+        def world_to_pixel(self, xy, img_size=None):
+            """Convert world coordinates to pixel coordinates, accounting for letterboxing.
+            
+            Args:
+                xy: World coordinates (x, y)
+                img_size: Image size (width/height). If None, uses self.width/self.height.
+            
+            Returns:
+                (px, py): Pixel coordinates in the actual image, accounting for black bars
+            """
+            x, y = xy
+            
+            # Use actual image dimensions if not specified
+            if img_size is None:
+                W = self.width
+                H = self.height
+            else:
+                W = H = img_size
+            
+            # Check if we've computed visible bounds
+            if not hasattr(self, '_visible_x_min'):
+                self._compute_visible_maze_bounds()
+            
+            # Map world coordinates to the visible maze region (not the full image)
+            # Normalize world coordinates to [0, 1] within maze bounds
+            world_x_norm = (x - self._pixel_x_min) / (self._pixel_x_max - self._pixel_x_min)
+            world_y_norm = (y - self._pixel_y_min) / (self._pixel_y_max - self._pixel_y_min)
+            
+            # Map to visible region in pixel space
+            px = int(self._visible_x_min + world_x_norm * (self._visible_width - 1))
+            # Flip y-axis (image coordinates: top is 0, world coordinates: bottom is min)
+            py = int(self._visible_y_max - world_y_norm * (self._visible_height - 1))
+            
+            return px, py
+
 
     class BallEnv(MazeEnv):
         def update_tree(self, tree):
@@ -641,18 +791,20 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 render_goal = options['render_goal']
 
             # Get initial and goal positions with noise.
-            agent_init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['agent_init_ij']))
-            ball_init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['ball_init_ij']))
+            # agent_init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['agent_init_ij']))
+            agent_init_xy = self.ij_to_xy(self.cur_task_info['agent_init_ij'])
+            # ball_init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['ball_init_ij']))
+            ball_init_xy = self.ij_to_xy(self.cur_task_info['ball_init_ij'])
             goal_xy = self.ij_to_xy(self.cur_task_info['goal_ij'])
-            if self._add_noise_to_goal:
-                goal_xy = self.add_noise(goal_xy)
+            # if self._add_noise_to_goal:
+            #     goal_xy = self.add_noise(goal_xy)
 
             # First, force set the position to the goal position to obtain the goal observation.
             super(MazeEnv, self).reset(*args, **kwargs)
 
-            # Do a few random steps to stabilize the environment.
-            for _ in range(10):
-                super(MazeEnv, self).step(self.action_space.sample())
+            # # Do a few random steps to stabilize the environment.
+            # for _ in range(10):
+            #     super(MazeEnv, self).step(self.action_space.sample())
 
             # Save the goal observation.
             self.set_goal(goal_xy=goal_xy)
@@ -686,8 +838,8 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 reward = 0.0
 
             # If the environment is in the single-task mode, modify the reward.
-            if self._reward_task_id is not None:
-                reward = reward - 1.0  # -1 (failure) or 0 (success).
+            # if self._reward_task_id is not None:
+            reward = reward - 1.0  # -1 (failure) or 0 (success).
 
             return ob, reward, terminated, truncated, info
 

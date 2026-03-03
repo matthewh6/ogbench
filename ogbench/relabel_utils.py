@@ -1,7 +1,7 @@
 import numpy as np
+from termcolor import cprint
 
-
-def relabel_dataset(env_name, env, dataset):
+def relabel_dataset(env_name, env, dataset, success_radius=0.04):
     """Relabel the dataset with rewards and masks based on the fixed task of the environment.
     This is useful for single-task variants of the environments.
 
@@ -9,6 +9,7 @@ def relabel_dataset(env_name, env, dataset):
         env_name: Name of the environment.
         env: Environment.
         dataset: Dataset dictionary.
+        success_radius: Radius for success.
     """
     assert env.unwrapped._reward_task_id is not None, 'The environment is not in the single-task mode.'
     env.reset()  # Set the task.
@@ -47,7 +48,9 @@ def relabel_dataset(env_name, env, dataset):
                     ]
                 )
             cube_xyzs = np.stack(cube_xyzs_list, axis=1)
-            successes = np.linalg.norm(target_cube_xyzs - cube_xyzs, axis=-1) <= 0.04
+            successes = np.linalg.norm(target_cube_xyzs - cube_xyzs, axis=-1) <= success_radius
+            
+            cprint(f'Found {successes.sum()} successes out of {successes.shape[0]}', 'green')
         elif 'scene' in env_name:
             num_cubes = env.unwrapped._num_cubes
             num_buttons = env.unwrapped._num_buttons

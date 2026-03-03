@@ -63,8 +63,14 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         self._effector_down_rotation = lie.SO3(np.asarray([0.0, 1.0, 0.0, 0.0]))
         self._workspace_bounds = np.asarray([[0.25, -0.35, 0.02], [0.6, 0.35, 0.35]])
         self._arm_sampling_bounds = np.asarray([[0.25, -0.35, 0.20], [0.6, 0.35, 0.35]])
+        
+        # Normal sampling bounds
         self._object_sampling_bounds = np.asarray([[0.3, -0.3], [0.55, 0.3]])
         self._target_sampling_bounds = np.asarray([[0.3, -0.3], [0.55, 0.3]])
+        # TODO: ood sampling bounds
+        # self._object_sampling_bounds = np.asarray([[0.3, -0.3], [0.4, 0.3]])
+        # self._target_sampling_bounds = np.asarray([[0.3, -0.3], [0.4, 0.3]])
+
         self._colors = dict(
             red=np.array([0.96, 0.26, 0.33, 1.0]),
             orange=np.array([1.0, 0.69, 0.21, 1.0]),
@@ -473,6 +479,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         **kwargs,
     ):
         if camera is None:
-            camera = 'front' if self._ob_type == 'states' else 'front_pixels'
+            # camera = 'front' if self._ob_type == 'states' else 'front_pixels'
+            camera = 'front_pixels'
 
         return super().render(camera=camera, *args, **kwargs)

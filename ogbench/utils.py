@@ -30,8 +30,8 @@ def load_dataset(dataset_path, ob_dtype=np.float32, action_dtype=np.float32, com
     file = np.load(dataset_path)
 
     dataset = dict()
-    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states', 'goal_images', 'states', 'state_vectors']:
-        if k == 'observations' or k == 'goals' or k == 'goal_images':
+    for k in ['observations', 'actions', 'terminals', 'goals', 'goal_states', 'goal_images', 'states', 'state_vectors', 'valids', 'masks', 'rewards']:
+        if k == 'observations' or k == 'goals':
             dtype = ob_dtype
         elif k == 'actions':
             dtype = action_dtype
@@ -144,6 +144,7 @@ def make_env_and_datasets(
     dataset_only=False,
     cur_env=None,
     add_info=False,
+    success_radius=0.04,
     **env_kwargs,
 ):
     """Make OGBench environment and load datasets.
@@ -164,13 +165,24 @@ def make_env_and_datasets(
     splits = dataset_name.split('-')
     dataset_add_info = add_info
     env = cur_env
+
+    ood_in_splits = 'ood' in splits
+    if ood_in_splits: # manually generated ood datasets
+        splits.remove('ood')
+        
     if 'singletask' in splits:
         # Single-task environment.
         pos = splits.index('singletask')
         env_name = '-'.join(splits[: pos - 1] + splits[pos:])  # Remove the dataset type.
+
         if not dataset_only:
             env = gymnasium.make(env_name, **env_kwargs)
-        dataset_name = '-'.join(splits[:pos] + splits[-1:])  # Remove the words 'singletask' and 'task\d' (if exists).
+
+        if ood_in_splits:
+            dataset_name = '-'.join(splits[:pos] + ['ood'] + splits[-1:])  # Keep 'ood' in dataset name
+        else:
+            dataset_name = '-'.join(splits[:pos] + splits[-1:])  # Remove the words 'singletask' and 'task\d' (if exists).
+
         dataset_add_info = True
     elif 'oraclerep' in splits:
         # Environment with oracle goal representations.
@@ -183,10 +195,8 @@ def make_env_and_datasets(
     else:
         # Original, goal-conditioned environment.
         env_name = '-'.join(splits[:-2] + splits[-1:])  # Remove the dataset type.
-
         if 'pointmaze' in splits and 'visual' in splits: # TODO: quick hack for manually generated visual env
             env_name = '-'.join(splits[1:-2] + splits[-1:])
-
         if not dataset_only:
             env = gymnasium.make(env_name, **env_kwargs)
     
@@ -199,6 +209,7 @@ def make_env_and_datasets(
         download_datasets([dataset_name], dataset_dir)
         train_dataset_path = os.path.join(dataset_dir, f'{dataset_name}.npz')
         val_dataset_path = os.path.join(dataset_dir, f'{dataset_name}-val.npz')
+        dataset_path = train_dataset_path
     else:
         train_dataset_path = dataset_path
         val_dataset_path = dataset_path.replace('.npz', '-val.npz')
@@ -226,13 +237,13 @@ def make_env_and_datasets(
 
     if 'singletask' in splits:
         # Add reward information to the datasets.
-        relabel_dataset(env_name, env, train_dataset)
-        relabel_dataset(env_name, env, val_dataset)
+        relabel_dataset(env_name, env, train_dataset, success_radius=success_radius)
+        relabel_dataset(env_name, env, val_dataset, success_radius=success_radius)
 
-    if 'oraclerep' in splits:
-        # Add oracle goal representations to the datasets.
-        add_oracle_reps(env_name, env, train_dataset)
-        add_oracle_reps(env_name, env, val_dataset)
+    # if 'oraclerep' in splits:
+    # Add oracle goal representations to the datasets.
+    add_oracle_reps(env_name, env, train_dataset)
+    add_oracle_reps(env_name, env, val_dataset)
 
     if not add_info:
         # Remove information keys.

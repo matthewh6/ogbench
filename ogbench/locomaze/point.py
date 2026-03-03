@@ -27,8 +27,8 @@ class PointEnv(MujocoEnv, utils.EzPickle):
         self,
         xml_file=None,
         render_mode='rgb_array',
-        width=64,
-        height=64,
+        width=1024,
+        height=1024,
         **kwargs,
     ):
         """Initialize the Humanoid environment.
